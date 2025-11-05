@@ -209,9 +209,12 @@ SPECTACULAR_SETTINGS = {
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
 
-# CAD File Settings - Only GLB/GLTF files are accepted (no CAD conversion needed)
-CAD_UPLOAD_MAX_SIZE = 100 * 1024 * 1024  # 100 MB
-CAD_ALLOWED_EXTENSIONS = ['.glb', '.gltf']
+# GLB/GLTF File Settings - Only GLB/GLTF files are accepted (direct upload, no conversion)
+GLB_UPLOAD_MAX_SIZE = 100 * 1024 * 1024  # 100 MB
+GLB_ALLOWED_EXTENSIONS = ['.glb', '.gltf']
+# Backward compatibility
+CAD_UPLOAD_MAX_SIZE = GLB_UPLOAD_MAX_SIZE
+CAD_ALLOWED_EXTENSIONS = GLB_ALLOWED_EXTENSIONS
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
