@@ -12,8 +12,8 @@ drf-spectacular==0.26.5
 numpy==1.26.2
 gunicorn==21.2.0
 dj-database-url==2.1.0
-pythonocc-core==7.7.2; sys_platform != "win32" and python_version >= "3.8"
-# FreeCAD alternatives - use if pythonocc not available
+# pythonocc-core is optional - not available for all Python versions
+# Using trimesh and assimp as alternatives instead
 trimesh==3.23.5
 assimp==5.3.1
 pymesh2==0.3.1
