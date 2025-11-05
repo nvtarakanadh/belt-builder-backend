@@ -81,13 +81,20 @@ import dj_database_url
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if DATABASE_URL:
     # Railway provides DATABASE_URL in format: postgresql://user:pass@host:port/dbname
+    # Parse and configure database from DATABASE_URL
+    db_config = dj_database_url.config(
+        default=DATABASE_URL,
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
     DATABASES = {
-        'default': dj_database_url.config(
-            default=DATABASE_URL,
-            conn_max_age=600,
-            conn_health_checks=True,
-        )
+        'default': db_config
     }
+    # Ensure we're using PostgreSQL
+    if 'ENGINE' not in db_config or 'postgresql' not in db_config.get('ENGINE', ''):
+        # Force PostgreSQL if DATABASE_URL is provided
+        db_config['ENGINE'] = 'django.db.backends.postgresql'
+        DATABASES['default'] = db_config
 elif os.environ.get('USE_POSTGRES', 'False') == 'True':
     DATABASES = {
         'default': {
@@ -97,6 +104,9 @@ elif os.environ.get('USE_POSTGRES', 'False') == 'True':
             'PASSWORD': os.environ.get('DB_PASSWORD', 'postgres'),
             'HOST': os.environ.get('DB_HOST', 'localhost'),
             'PORT': os.environ.get('DB_PORT', '5432'),
+            'OPTIONS': {
+                'connect_timeout': 10,
+            },
         }
     }
 else:

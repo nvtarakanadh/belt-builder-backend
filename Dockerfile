@@ -44,5 +44,6 @@ EXPOSE 8000
 
 # Run migrations and start server using gunicorn
 # Railway sets PORT environment variable automatically
-CMD python manage.py migrate && python manage.py collectstatic --noinput && gunicorn cadbuilder.wsgi:application --bind 0.0.0.0:${PORT:-8000}
+# Wait for database, then migrate, collect static files, and start server
+CMD python wait_for_db.py && python manage.py migrate && python manage.py collectstatic --noinput && gunicorn cadbuilder.wsgi:application --bind 0.0.0.0:${PORT:-8000}
 
