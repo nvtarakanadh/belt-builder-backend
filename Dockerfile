@@ -38,8 +38,9 @@ RUN mkdir -p /app/media/components/original \
 # Collect static files
 RUN python manage.py collectstatic --noinput || true
 
-# Expose port (Railway will set PORT env var)
-EXPOSE $PORT
+# Expose port (Railway will set PORT env var at runtime)
+# Using 8000 as default, but Railway will override with PORT env var
+EXPOSE 8000
 
 # Run migrations and start server using gunicorn
 # Railway sets PORT environment variable automatically
