@@ -42,8 +42,11 @@ RUN python manage.py collectstatic --noinput || true
 # Using 8000 as default, but Railway will override with PORT env var
 EXPOSE 8000
 
+# Copy and make startup script executable
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
 # Run migrations and start server using gunicorn
 # Railway sets PORT environment variable automatically
-# Wait for database, then migrate, collect static files, and start server
-CMD python wait_for_db.py && python manage.py migrate && python manage.py collectstatic --noinput && gunicorn cadbuilder.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 120 --access-logfile - --error-logfile -
+CMD ["/app/start.sh"]
 
