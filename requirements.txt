@@ -12,10 +12,12 @@ drf-spectacular==0.26.5
 numpy==1.26.2
 gunicorn==21.2.0
 dj-database-url==2.1.0
-# pythonocc-core is optional - not available for all Python versions
-# Using trimesh and assimp as alternatives instead
+# CAD processing libraries
+# trimesh is the primary library for GLB/GLTF processing
 trimesh==3.23.5
-assimp==5.3.1
-pymesh2==0.3.1
 pygltflib==1.15.5
+# Optional: assimp and pymesh2 are not essential since trimesh handles GLB/GLTF files
+# Uncomment if you need them (may not be available for all Python versions)
+# assimp==4.1.4
+# pymesh2==0.3.1
 
