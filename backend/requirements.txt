@@ -1,0 +1,23 @@
+Django==4.2.7
+djangorestframework==3.14.0
+django-cors-headers==4.3.1
+django-storages==1.14.2
+boto3==1.29.7
+psycopg2-binary==2.9.9
+python-magic==0.4.27
+Pillow>=10.2.0
+celery==5.3.4
+redis==5.0.1
+drf-spectacular==0.26.5
+numpy==1.26.2
+gunicorn==21.2.0
+dj-database-url==2.1.0
+# CAD processing libraries
+# trimesh is the primary library for GLB/GLTF processing
+trimesh==3.23.5
+pygltflib==1.15.5
+# Optional: assimp and pymesh2 are not essential since trimesh handles GLB/GLTF files
+# Uncomment if you need them (may not be available for all Python versions)
+# assimp==4.1.4
+# pymesh2==0.3.1
+
