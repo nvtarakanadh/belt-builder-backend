@@ -1,0 +1,23 @@
+# Docker Compose configuration for FreeCAD conversion service
+# This can be used to deploy FreeCAD as a separate microservice
+
+version: '3.8'
+
+services:
+  freecad-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.freecad
+    image: freecad-converter:latest
+    container_name: freecad-converter
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./temp:/app/temp
+    environment:
+      - PYTHONUNBUFFERED=1
+    # For now, the service runs the converter script directly
+    # You can extend this to run an HTTP API server if needed
+    command: python3 /app/freecad_converter.py
+
+

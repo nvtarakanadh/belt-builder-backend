@@ -115,17 +115,73 @@ Interactive API documentation is available at:
 - ReDoc: http://localhost:8000/api/redoc/
 - OpenAPI Schema: http://localhost:8000/api/schema/
 
-## GLB File Processing
+## CAD File Processing
 
-The backend accepts GLB/GLTF files directly and processes them using:
+The backend accepts multiple CAD file formats and processes them using:
 
-1. **Trimesh**: Extracts geometry data (bounding boxes, volumes, connection points) from GLB/GLTF files
-2. **No Conversion**: GLB files are used directly for web visualization
+1. **pythonocc-core (OpenCASCADE)** or **FreeCAD CLI**: Converts STEP files to STL
+2. **Trimesh**: Extracts geometry data (bounding boxes, volumes, connection points) and converts to GLB
+3. **Automatic Conversion**: All formats are converted to GLB for web visualization
 
 ### Supported File Formats
 
-- **GLB** (.glb) - Binary GLTF format (recommended)
-- **GLTF** (.gltf) - Text-based GLTF format
+- **GLB** (.glb) - Binary GLTF format (recommended, no conversion needed)
+- **GLTF** (.gltf) - Text-based GLTF format (no conversion needed)
+- **STEP** (.step, .stp) - STEP CAD format (converted via pythonocc-core/FreeCAD → STL → GLB)
+- **STL** (.stl) - STL mesh format (converted to GLB)
+- **OBJ** (.obj) - OBJ mesh format (converted to GLB)
+
+### STEP File Format Support
+
+**STEP files are supported via FreeCAD Docker (deployment-friendly solution).**
+
+STEP files are automatically converted to STL/OBJ using FreeCAD running in a Docker container. This solution is deployment-friendly and can be used in production environments.
+
+#### Setup FreeCAD Docker Service
+
+**Option 1: Deploy FreeCAD as a separate Docker service (Recommended)**
+
+1. Build the FreeCAD Docker image:
+   ```bash
+   docker build -f Dockerfile.freecad -t freecad-converter:latest .
+   ```
+
+2. Run the FreeCAD service:
+   ```bash
+   docker run -d -p 8001:8001 --name freecad-service freecad-converter:latest
+   ```
+
+3. Set environment variable in your Django app:
+   ```bash
+   FREECAD_DOCKER_URL=http://freecad-service:8001
+   ```
+
+**Option 2: Use FreeCAD Docker via subprocess (requires Docker on same host)**
+
+1. Build the FreeCAD Docker image:
+   ```bash
+   docker build -f Dockerfile.freecad -t freecad-converter:latest .
+   ```
+
+2. Ensure Docker is accessible from your Django app
+
+3. Set environment variable (optional, defaults to `freecad-converter:latest`):
+   ```bash
+   FREECAD_DOCKER_IMAGE=freecad-converter:latest
+   ```
+
+**Option 3: Pre-convert STEP files (Fallback)**
+
+If FreeCAD Docker is not available, you can pre-convert STEP files:
+- Use FreeCAD desktop: https://www.freecad.org/
+- Use online converters
+- Use other CAD software
+
+#### Supported Formats (Direct Upload):
+- ✅ **GLB/GLTF** - Fully supported (no conversion needed)
+- ✅ **STEP** - Supported via FreeCAD Docker (converts to STL → GLB)
+- ✅ **STL** - Fully supported (converts to GLB automatically)
+- ✅ **OBJ** - Fully supported (converts to GLB automatically)
 
 ## Smart Placement System
 

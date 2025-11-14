@@ -4,6 +4,12 @@ Django settings for cadbuilder project.
 
 from pathlib import Path
 import os
+import sys
+
+# Add D drive Python packages to path (for chardet and other packages)
+d_drive_packages = r"D:\python-packages"
+if os.path.exists(d_drive_packages) and d_drive_packages not in sys.path:
+    sys.path.insert(0, d_drive_packages)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -41,6 +47,7 @@ INSTALLED_APPS = [
     'components',
     'projects',
     'cad_processing',
+    'converter',  # STEP to GLB converter API
 ]
 
 MIDDLEWARE = [
@@ -179,6 +186,11 @@ if frontend_url and frontend_url not in CORS_ALLOWED_ORIGINS:
 CORS_ALLOW_ALL_ORIGINS = os.environ.get('RAILWAY_ENVIRONMENT') == 'true' or DEBUG
 CORS_ALLOW_CREDENTIALS = True
 
+# CSRF settings - trust the same origins as CORS
+CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS.copy()
+if frontend_url and frontend_url not in CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS.append(frontend_url)
+
 # REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
@@ -188,7 +200,11 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.AllowAny',  # Allow unauthenticated access for development
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        # Empty for development - no authentication required
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    # Disable CSRF for API views (handled by DRF)
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
     ],
     'DEFAULT_PARSER_CLASSES': [
         'rest_framework.parsers.JSONParser',
@@ -209,12 +225,22 @@ SPECTACULAR_SETTINGS = {
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
 
-# GLB/GLTF File Settings - Only GLB/GLTF files are accepted (direct upload, no conversion)
-GLB_UPLOAD_MAX_SIZE = 100 * 1024 * 1024  # 100 MB
-GLB_ALLOWED_EXTENSIONS = ['.glb', '.gltf']
+# CAD File Settings - Supports GLB/GLTF, STEP, STL, OBJ
+# STEP files are converted using FreeCAD Docker (deployment-friendly)
+CAD_UPLOAD_MAX_SIZE = 100 * 1024 * 1024  # 100 MB
+CAD_ALLOWED_EXTENSIONS = ['.glb', '.gltf', '.step', '.stp', '.stl', '.obj']
 # Backward compatibility
-CAD_UPLOAD_MAX_SIZE = GLB_UPLOAD_MAX_SIZE
-CAD_ALLOWED_EXTENSIONS = GLB_ALLOWED_EXTENSIONS
+GLB_UPLOAD_MAX_SIZE = CAD_UPLOAD_MAX_SIZE
+GLB_ALLOWED_EXTENSIONS = ['.glb', '.gltf']
+
+# STEP File Conversion Settings - FreeCAD Docker (deployment-friendly)
+# Option 1: Use FreeCAD Docker container via HTTP API
+FREECAD_DOCKER_URL = os.environ.get('FREECAD_DOCKER_URL', None)  # e.g., 'http://freecad-service:8001'
+# Option 2: Use FreeCAD Docker container via subprocess (requires Docker)
+FREECAD_DOCKER_IMAGE = os.environ.get('FREECAD_DOCKER_IMAGE', 'freecad-converter:latest')
+
+# CloudConvert API (kept for reference, but doesn't support STEP)
+CLOUDCONVERT_API_KEY = os.environ.get('CLOUDCONVERT_API_KEY', '')
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

@@ -70,8 +70,10 @@ class ComponentViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], url_path='upload_component', parser_classes=[MultiPartParser, FormParser])
     def upload(self, request):
         """
-        Upload a new component with GLB/GLTF file; extracts geometry data.
-        Only GLB/GLTF files are accepted (no CAD conversion needed).
+        Upload a new component with CAD file (GLB/GLTF, STEP, STL, OBJ).
+        Extracts geometry data and converts to GLB for web visualization.
+        
+        STEP files are converted using FreeCAD Docker (deployment-friendly).
         """
         serializer = ComponentUploadSerializer(data=request.data)
         if not serializer.is_valid():
@@ -86,11 +88,70 @@ class ComponentViewSet(viewsets.ModelViewSet):
             )
         
         file_ext = Path(uploaded_file.name).suffix.lower()
+        
         if file_ext not in settings.CAD_ALLOWED_EXTENSIONS:
             return Response(
                 {'error': f'Invalid file type. Allowed: {", ".join(settings.CAD_ALLOWED_EXTENSIONS)}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        # Check STEP file conversion availability
+        if file_ext in ['.step', '.stp']:
+            # Check if STEP conversion is available
+            step_conversion_available = False
+            
+            # Check for pythonocc-core
+            try:
+                from OCC.Core.STEPControl_Reader import STEPControl_Reader
+                step_conversion_available = True
+            except ImportError:
+                pass
+            
+            # Check for FreeCAD Docker
+            if not step_conversion_available:
+                freecad_docker_url = getattr(settings, 'FREECAD_DOCKER_URL', None)
+                if freecad_docker_url:
+                    try:
+                        import requests
+                        response = requests.get(f"{freecad_docker_url}/health", timeout=2)
+                        if response.status_code == 200:
+                            step_conversion_available = True
+                    except:
+                        pass
+            
+            # Check for Docker command (for FreeCAD Docker subprocess)
+            if not step_conversion_available:
+                try:
+                    import subprocess
+                    subprocess.run(['docker', '--version'], capture_output=True, check=True, timeout=2)
+                    # Docker is available, but we still need the FreeCAD image
+                    # This is not a guarantee, but we'll let it try
+                    step_conversion_available = True
+                except:
+                    pass
+            
+            if not step_conversion_available:
+                return Response(
+                    {
+                        'error': 'STEP file conversion is not available',
+                        'message': (
+                            'STEP file conversion requires pythonocc-core or FreeCAD Docker, which are not currently available.\n\n'
+                            'SOLUTIONS:\n'
+                            '1. Use Docker (Recommended):\n'
+                            '   docker build -f Dockerfile.converter -t step-converter:latest .\n'
+                            '   docker run -d -p 8001:8001 --name freecad-service step-converter:latest\n'
+                            '   Then set FREECAD_DOCKER_URL=http://localhost:8001 in your environment\n\n'
+                            '2. Use Python 3.10-3.12:\n'
+                            '   Install Python 3.12, create a new virtual environment, and install pythonocc-core\n\n'
+                            '3. Pre-convert STEP files:\n'
+                            '   Convert your STEP file to STL or OBJ using FreeCAD (free): https://www.freecad.org/\n'
+                            '   Then upload the STL or OBJ file instead.\n\n'
+                            'For detailed instructions, see: backend/INSTALL_PYTHONOCC.md'
+                        ),
+                        'allowed_formats': settings.CAD_ALLOWED_EXTENSIONS
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         
         # Validate file size
         if uploaded_file.size > settings.CAD_UPLOAD_MAX_SIZE:
@@ -126,9 +187,8 @@ class ComponentViewSet(viewsets.ModelViewSet):
                                 temp_file.write(chunk)
                         
                         try:
-                            # Process GLB file (no conversion needed)
-                            # Since we're uploading GLB directly, we can use the original file
-                            # But we still need to extract geometry and save a copy for glb_file field
+                            # Process CAD file (GLB/GLTF, STL, OBJ)
+                            # Extract geometry and convert to GLB for web visualization
                             glb_output_path = Path(settings.MEDIA_ROOT) / 'components' / 'glb' / f'{component.id}.glb'
                             glb_output_path.parent.mkdir(parents=True, exist_ok=True)
                             
@@ -146,12 +206,12 @@ class ComponentViewSet(viewsets.ModelViewSet):
                             component.volume = geometry_data.get('volume', 0.0)
                             
                             # Save GLB file properly using Django FileField
-                            # Use the copied GLB file or the original if it's already GLB
+                            # The process_result should contain the converted/copied GLB file
                             glb_file_path = None
                             if process_result.get('glb_path') and Path(process_result['glb_path']).exists():
                                 glb_file_path = Path(process_result['glb_path'])
                             elif temp_file_path.exists() and temp_file_path.suffix.lower() in ['.glb', '.gltf']:
-                                # Original file is already GLB, use it
+                                # Fallback: Original file is already GLB/GLTF, use it
                                 glb_file_path = temp_file_path
                             
                             if glb_file_path and glb_file_path.exists():
@@ -163,7 +223,7 @@ class ComponentViewSet(viewsets.ModelViewSet):
                                     )
                                 logger.info(f"GLB file saved for component {component.id}: {component.glb_file.name}")
                             else:
-                                logger.warning(f"GLB file not found for component {component.id}")
+                                logger.warning(f"GLB file not found for component {component.id}. Conversion may have failed.")
                             
                             # Auto-fill mountable_sides and compatibility via rules
                             from .utils import COMPONENT_PLACEMENT_RULES

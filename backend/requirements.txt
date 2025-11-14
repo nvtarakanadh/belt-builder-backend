@@ -3,21 +3,31 @@ djangorestframework==3.14.0
 django-cors-headers==4.3.1
 django-storages==1.14.2
 boto3==1.29.7
-psycopg2-binary==2.9.9
+psycopg[binary]>=3.1.0  # Updated for Python 3.13 compatibility (replaces psycopg2-binary)
 python-magic==0.4.27
 Pillow>=10.2.0
 celery==5.3.4
 redis==5.0.1
 drf-spectacular==0.26.5
-numpy==1.26.2
+numpy>=2.0.0  # Updated for Python 3.13 compatibility
 gunicorn==21.2.0
 dj-database-url==2.1.0
 # CAD processing libraries
 # trimesh is the primary library for GLB/GLTF processing
-trimesh==3.23.5
+trimesh>=4.0.0  # Updated for NumPy 2.0 compatibility
 pygltflib==1.15.5
-# Optional: assimp and pymesh2 are not essential since trimesh handles GLB/GLTF files
-# Uncomment if you need them (may not be available for all Python versions)
-# assimp==4.1.4
-# pymesh2==0.3.1
+requests>=2.31.0
+# STEP file support - pythonocc-core for STEP → STL conversion
+# NOTE: pythonocc-core does NOT support Python 3.13 on Windows yet
+# Options:
+#   1. Use Python 3.10-3.12 (recommended for Windows)
+#   2. Use Docker (Dockerfile.converter uses Python 3.10)
+#   3. Use WSL2 (Linux environment)
+#   4. Use Conda: conda install -c conda-forge pythonocc-core
+# 
+# For Python 3.10-3.12 on Windows, try:
+#   pip install pythonocc-core
+# 
+# If that fails, use Docker or WSL2 instead
+# pythonocc-core>=7.7.0  # Uncomment when using Python 3.10-3.12
 

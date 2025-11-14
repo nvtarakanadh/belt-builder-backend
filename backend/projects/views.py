@@ -6,6 +6,8 @@ from rest_framework.authentication import SessionAuthentication
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 
 from .models import Project, AssemblyItem
 from .serializers import (
@@ -15,24 +17,27 @@ from .serializers import (
 from components.models import Component, ConnectionPoint
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class ProjectViewSet(viewsets.ModelViewSet):
     """ViewSet for projects"""
     permission_classes = [AllowAny]  # Allow unauthenticated access for development
-    authentication_classes = []  # Disable authentication for development
+    authentication_classes = [SessionAuthentication]  # Enable session authentication
+    pagination_class = None  # Disable pagination for projects list
     
     def get_queryset(self):
-        # For development: return all projects if not authenticated, otherwise filter by user
+        # Filter projects by owner if authenticated, otherwise return empty queryset
         if self.request.user.is_authenticated:
             queryset = Project.objects.filter(owner=self.request.user).prefetch_related('assembly_items__component')
         else:
-            queryset = Project.objects.all().prefetch_related('assembly_items__component')
+            # Return empty queryset for unauthenticated users (or public projects if needed)
+            queryset = Project.objects.none()
         
         # Allow filtering by public projects
         if self.request.query_params.get('include_public') == 'true':
             if self.request.user.is_authenticated:
-                queryset = Project.objects.filter(Q(owner=self.request.user) | Q(is_public=True))
+                queryset = Project.objects.filter(Q(owner=self.request.user) | Q(is_public=True)).prefetch_related('assembly_items__component')
             else:
-                queryset = Project.objects.filter(is_public=True)
+                queryset = Project.objects.filter(is_public=True).prefetch_related('assembly_items__component')
         
         return queryset
     
@@ -42,12 +47,13 @@ class ProjectViewSet(viewsets.ModelViewSet):
         return ProjectSerializer
     
     def perform_create(self, serializer):
-        # For development: allow creating projects without authentication
+        # Only allow authenticated users to create projects
         if self.request.user.is_authenticated:
             serializer.save(owner=self.request.user)
         else:
-            # Create without owner for unauthenticated users (development only)
-            serializer.save()
+            # Unauthenticated users cannot create projects
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Authentication required to create projects")
     
     @action(detail=True, methods=['post'])
     def add_component(self, request, pk=None):
@@ -414,11 +420,37 @@ class AssemblyItemViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         project_id = self.request.query_params.get('project_id')
+        queryset = AssemblyItem.objects.all().select_related(
+            'component', 'project', 'parent', 'connected_to', 'connection_point'
+        )
+        
+        # Filter by project_id if provided (for list operations)
         if project_id:
-            return AssemblyItem.objects.filter(project_id=project_id).select_related(
-                'component', 'project', 'parent', 'connected_to', 'connection_point'
-            )
-        return AssemblyItem.objects.none()
+            queryset = queryset.filter(project_id=project_id)
+        
+        return queryset
+    
+    def get_object(self):
+        """
+        Override to allow deletion/retrieval by ID without requiring project_id.
+        For list operations, project_id filtering is still applied in get_queryset.
+        """
+        # For detail operations (GET, PUT, PATCH, DELETE), allow access by ID
+        # The queryset will include all items, but we can still filter if project_id is provided
+        queryset = self.get_queryset()
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        lookup_value = self.kwargs[lookup_url_kwarg]
+        
+        # Try to get the object - if project_id was provided, it's already filtered
+        # If not, we'll get it by ID (which is unique)
+        try:
+            obj = queryset.get(**{self.lookup_field: lookup_value})
+        except AssemblyItem.DoesNotExist:
+            # If not found in filtered queryset, try without project filter
+            obj = AssemblyItem.objects.get(**{self.lookup_field: lookup_value})
+        
+        self.check_object_permissions(self.request, obj)
+        return obj
     
     def get_serializer_context(self):
         context = super().get_serializer_context()

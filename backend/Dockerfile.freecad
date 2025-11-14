@@ -1,0 +1,25 @@
+# Dockerfile for FreeCAD headless STEP conversion service
+# This can be used as a separate microservice or integrated into the main app
+
+FROM ubuntu:22.04
+
+# Avoid interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install FreeCAD and dependencies
+RUN apt-get update && apt-get install -y \
+    freecad \
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a simple Python script for STEP conversion
+WORKDIR /app
+
+# FreeCAD conversion script
+COPY freecad_converter.py /app/
+
+# Default command
+CMD ["python3", "/app/freecad_converter.py"]
+
+

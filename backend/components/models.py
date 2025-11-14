@@ -29,8 +29,8 @@ class Component(models.Model):
     # Editable fields
     name = models.CharField(max_length=200)
     category_label = models.CharField(max_length=32, choices=CATEGORY_CHOICES, default="Base")
-    original_file = models.FileField(upload_to='components/original/', help_text='GLB/GLTF file (no CAD conversion needed)')
-    glb_file = models.FileField(upload_to='components/glb/', blank=True, null=True, help_text='GLB file for web visualization')
+    original_file = models.FileField(upload_to='components/original/', help_text='CAD file (GLB/GLTF, STEP, STL, OBJ)')
+    glb_file = models.FileField(upload_to='components/glb/', blank=True, null=True, help_text='GLB file for web visualization (converted from original if needed)')
     
     # Auto-filled geometry fields
     bounding_box = models.JSONField(default=dict, blank=True)
