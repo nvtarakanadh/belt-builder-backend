@@ -22,8 +22,18 @@ except Exception as e:
 
 def wait_for_db(max_attempts=10, delay=2):
     """Wait for database connection to be available"""
-    # Check if DATABASE_URL is set
-    if not os.environ.get('DATABASE_URL') and os.environ.get('USE_POSTGRES', 'False') != 'True':
+    # Check if DATABASE_URL or PostgreSQL environment variables are set
+    has_database_url = os.environ.get('DATABASE_URL') or os.environ.get('POSTGRES_URL')
+    has_pg_vars = all([
+        os.environ.get('PGHOST'),
+        os.environ.get('PGPORT'),
+        os.environ.get('PGUSER'),
+        os.environ.get('PGPASSWORD'),
+        os.environ.get('PGDATABASE')
+    ])
+    use_postgres = os.environ.get('USE_POSTGRES', 'False') == 'True'
+    
+    if not has_database_url and not has_pg_vars and not use_postgres:
         print("ℹ️  No PostgreSQL configured, using SQLite (skip database check)")
         return True
     

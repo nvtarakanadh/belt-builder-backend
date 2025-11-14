@@ -82,48 +82,73 @@ TEMPLATES = [
 WSGI_APPLICATION = 'cadbuilder.wsgi.application'
 
 # Database
-# Support Railway's DATABASE_URL format
+# Support Railway's DATABASE_URL format and PostgreSQL service linking
 import dj_database_url
 
-DATABASE_URL = os.environ.get('DATABASE_URL')
+# Railway provides DATABASE_URL when a PostgreSQL service is linked
+# Also check for Railway's PostgreSQL service variables
+DATABASE_URL = os.environ.get('DATABASE_URL') or os.environ.get('POSTGRES_URL')
+
+# If no DATABASE_URL, check for individual PostgreSQL environment variables (Railway format)
+if not DATABASE_URL:
+    pg_host = os.environ.get('PGHOST')
+    pg_port = os.environ.get('PGPORT')
+    pg_user = os.environ.get('PGUSER')
+    pg_password = os.environ.get('PGPASSWORD')
+    pg_database = os.environ.get('PGDATABASE')
+    
+    if all([pg_host, pg_port, pg_user, pg_password, pg_database]):
+        # Construct DATABASE_URL from Railway PostgreSQL service variables
+        DATABASE_URL = f"postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_database}"
+
 if DATABASE_URL:
     # Railway provides DATABASE_URL in format: postgresql://user:pass@host:port/dbname
     # Parse and configure database from DATABASE_URL
-    db_config = dj_database_url.config(
-        default=DATABASE_URL,
-        conn_max_age=600,
-        conn_health_checks=True,
-    )
-    DATABASES = {
-        'default': db_config
-    }
-    # Ensure we're using PostgreSQL
-    if 'ENGINE' not in db_config or 'postgresql' not in db_config.get('ENGINE', ''):
-        # Force PostgreSQL if DATABASE_URL is provided
-        db_config['ENGINE'] = 'django.db.backends.postgresql'
-        DATABASES['default'] = db_config
-elif os.environ.get('USE_POSTGRES', 'False') == 'True':
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ.get('DB_NAME', 'cadbuilder'),
-            'USER': os.environ.get('DB_USER', 'postgres'),
-            'PASSWORD': os.environ.get('DB_PASSWORD', 'postgres'),
-            'HOST': os.environ.get('DB_HOST', 'localhost'),
-            'PORT': os.environ.get('DB_PORT', '5432'),
-            'OPTIONS': {
-                'connect_timeout': 10,
-            },
+    try:
+        db_config = dj_database_url.config(
+            default=DATABASE_URL,
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
+        DATABASES = {
+            'default': db_config
         }
-    }
-else:
-    # Default to SQLite for easier development
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
+        # Ensure we're using PostgreSQL
+        if 'ENGINE' not in db_config or 'postgresql' not in db_config.get('ENGINE', ''):
+            # Force PostgreSQL if DATABASE_URL is provided
+            db_config['ENGINE'] = 'django.db.backends.postgresql'
+            DATABASES['default'] = db_config
+        print(f"✅ Database configured from DATABASE_URL: {db_config.get('HOST', 'unknown')}/{db_config.get('NAME', 'unknown')}")
+    except Exception as e:
+        print(f"⚠️ Error parsing DATABASE_URL: {e}")
+        # Fall back to manual configuration
+        DATABASE_URL = None
+
+if not DATABASE_URL:
+    if os.environ.get('USE_POSTGRES', 'False') == 'True':
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': os.environ.get('DB_NAME', 'cadbuilder'),
+                'USER': os.environ.get('DB_USER', 'postgres'),
+                'PASSWORD': os.environ.get('DB_PASSWORD', 'postgres'),
+                'HOST': os.environ.get('DB_HOST', 'localhost'),
+                'PORT': os.environ.get('DB_PORT', '5432'),
+                'OPTIONS': {
+                    'connect_timeout': 10,
+                },
+            }
         }
-    }
+        print(f"✅ Database configured from individual environment variables: {os.environ.get('DB_HOST', 'localhost')}")
+    else:
+        # Default to SQLite for easier development
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.sqlite3',
+                'NAME': BASE_DIR / 'db.sqlite3',
+            }
+        }
+        print("⚠️ Using SQLite database (not recommended for production)")
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
