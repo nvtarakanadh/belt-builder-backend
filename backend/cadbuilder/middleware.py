@@ -12,8 +12,8 @@ class EnhancedCorsMiddleware(MiddlewareMixin):
     This is a fallback in case django-cors-headers doesn't set headers properly
     """
     def process_response(self, request, response):
-        # Only process API requests
-        if not request.path.startswith('/api/'):
+        # Process API and media requests
+        if not (request.path.startswith('/api/') or request.path.startswith('/media/')):
             return response
         
         # Get origin from request

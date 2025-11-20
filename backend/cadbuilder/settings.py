@@ -240,8 +240,9 @@ if railway_public_domain:
 CORS_ALLOW_ALL_ORIGINS = os.environ.get('CORS_ALLOW_ALL_ORIGINS', 'False') == 'True' or DEBUG
 CORS_ALLOW_CREDENTIALS = True
 
-# Ensure CORS middleware processes all requests
-CORS_URLS_REGEX = r'^/api/.*$'
+# Ensure CORS middleware processes API and media requests
+# Include both /api/ and /media/ routes for CORS
+CORS_URLS_REGEX = r'^(/api/|/media/).*$'
 
 # Additional CORS headers for preflight requests
 CORS_ALLOW_HEADERS = [

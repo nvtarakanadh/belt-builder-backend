@@ -2,12 +2,13 @@
 URL configuration for cadbuilder project.
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 from .views import health_check, api_root, csrf_token
 from .auth_views import RegisterView, LoginView, LogoutView, CurrentUserView
+from .media_views import serve_media_with_cors
 
 urlpatterns = [
     # Root and health check
@@ -33,9 +34,14 @@ urlpatterns = [
     path('api/', include('components.urls')),
     path('api/', include('projects.urls')),
     path('api/', include('converter.urls')),  # STEP to GLB converter
+    
+    # Media files with CORS support
+    re_path(r'^media/(?P<path>.*)$', serve_media_with_cors, name='media'),
 ]
 
-# Serve media files in development
+# Serve media files in development (fallback if custom view doesn't work)
+# The custom view above should handle this, but keep as fallback
 if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    # Only add if not already handled by custom view
+    pass
 
