@@ -55,6 +55,20 @@ class ProjectViewSet(viewsets.ModelViewSet):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("Authentication required to create projects")
     
+    def perform_destroy(self, instance):
+        # Only allow the owner to delete their own projects
+        if not self.request.user.is_authenticated:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Authentication required to delete projects")
+        
+        # Check if user owns the project
+        if instance.owner and instance.owner != self.request.user:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("You can only delete your own projects")
+        
+        # Delete the project (this will cascade delete assembly_items due to CASCADE in model)
+        instance.delete()
+    
     @action(detail=True, methods=['post'])
     def add_component(self, request, pk=None):
         """
