@@ -33,16 +33,28 @@ Optional variables:
 
 ### Frontend Environment Variables
 
-Create `frontend/.env`:
+**⚠️ IMPORTANT: You MUST set `VITE_API_BASE` in your deployment platform!**
+
+The frontend needs to know where your backend API is located. Without this, it will default to `localhost:8000`, which won't work in production.
+
+**For local development**, create `frontend/.env`:
 
 ```env
 VITE_API_BASE=http://localhost:8000
 ```
 
-For production:
-```env
-VITE_API_BASE=https://your-api-domain.com
-```
+**For production deployment**, set `VITE_API_BASE` in your deployment platform:
+
+- **Vercel**: Go to Project Settings → Environment Variables → Add `VITE_API_BASE` = `https://your-backend-url.com`
+- **Netlify**: Go to Site Settings → Environment Variables → Add `VITE_API_BASE` = `https://your-backend-url.com`
+- **Railway**: Use `railway variables set VITE_API_BASE=https://your-backend-url.com` (if deploying frontend separately)
+
+**Example values:**
+- `VITE_API_BASE=https://your-backend.railway.app`
+- `VITE_API_BASE=https://api.yourdomain.com`
+- `VITE_API_BASE=https://your-backend-url.com`
+
+**Note:** After setting the environment variable, you need to rebuild/redeploy your frontend for the change to take effect.
 
 ## Database Setup
 
