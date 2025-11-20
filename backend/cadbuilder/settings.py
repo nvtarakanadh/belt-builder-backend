@@ -63,6 +63,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    'cadbuilder.middleware.EnhancedCorsMiddleware',  # Custom CORS middleware for additional safety
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -226,10 +227,21 @@ if frontend_url:
     if frontend_url not in CORS_ALLOWED_ORIGINS:
         CORS_ALLOWED_ORIGINS.append(frontend_url)
 
+# Also check for Railway environment variable
+railway_public_domain = os.environ.get('RAILWAY_PUBLIC_DOMAIN')
+if railway_public_domain:
+    # Add Railway domain to allowed origins if it's a frontend URL
+    # (This is mainly for backend, but we include it for completeness)
+    pass
+
 # For Railway preview deployments, allow all origins
 # In production, only allow specific origins for security
+# IMPORTANT: Set CORS_ALLOW_ALL_ORIGINS=True temporarily if having issues
 CORS_ALLOW_ALL_ORIGINS = os.environ.get('CORS_ALLOW_ALL_ORIGINS', 'False') == 'True' or DEBUG
 CORS_ALLOW_CREDENTIALS = True
+
+# Ensure CORS middleware processes all requests
+CORS_URLS_REGEX = r'^/api/.*$'
 
 # Additional CORS headers for preflight requests
 CORS_ALLOW_HEADERS = [

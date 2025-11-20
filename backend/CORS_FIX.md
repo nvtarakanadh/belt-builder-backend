@@ -16,22 +16,28 @@ Frontend deployed on Vercel (`https://belt-builder.vercel.app`) cannot connect t
 
 ## Required Environment Variables on Railway
 
-Make sure these environment variables are set in your Railway backend deployment:
+**CRITICAL: You MUST set these environment variables in Railway for CORS to work!**
 
-1. **FRONTEND_URL** (optional but recommended):
-   ```
-   FRONTEND_URL=https://belt-builder.vercel.app
-   ```
-
-2. **ALLOWED_HOSTS** (required):
+1. **ALLOWED_HOSTS** (required):
    ```
    ALLOWED_HOSTS=web-production-80919.up.railway.app,localhost,127.0.0.1
+   ```
+
+2. **FRONTEND_URL** (highly recommended):
+   ```
+   FRONTEND_URL=https://belt-builder.vercel.app
    ```
 
 3. **DEBUG** (should be False in production):
    ```
    DEBUG=False
    ```
+
+4. **CORS_ALLOW_ALL_ORIGINS** (temporary fix if still having issues):
+   ```
+   CORS_ALLOW_ALL_ORIGINS=True
+   ```
+   ⚠️ **Warning:** Only use this temporarily for debugging. Set to `False` once CORS is working properly.
 
 ## How to Set Environment Variables in Railway
 

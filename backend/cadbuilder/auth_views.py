@@ -9,6 +9,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
+from django.views.decorators.http import require_http_methods
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -20,6 +21,16 @@ class RegisterView(APIView):
     """
     permission_classes = [AllowAny]
     authentication_classes = []  # No authentication required
+
+    def options(self, request, *args, **kwargs):
+        """Handle preflight OPTIONS request"""
+        response = Response()
+        response['Access-Control-Allow-Origin'] = request.META.get('HTTP_ORIGIN', '*')
+        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-CSRFToken'
+        response['Access-Control-Allow-Credentials'] = 'true'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
 
     def post(self, request):
         try:
@@ -140,6 +151,16 @@ class CurrentUserView(APIView):
     """
     permission_classes = [AllowAny]
     authentication_classes = []  # Allow checking without auth
+
+    def options(self, request, *args, **kwargs):
+        """Handle preflight OPTIONS request"""
+        response = Response()
+        response['Access-Control-Allow-Origin'] = request.META.get('HTTP_ORIGIN', '*')
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-CSRFToken'
+        response['Access-Control-Allow-Credentials'] = 'true'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
 
     def get(self, request):
         if request.user.is_authenticated:
