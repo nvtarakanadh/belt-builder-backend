@@ -220,12 +220,42 @@ CORS_ALLOWED_ORIGINS = [
 
 # Add frontend URL from environment if provided
 frontend_url = os.environ.get('FRONTEND_URL', 'https://belt-builder.vercel.app')
-if frontend_url and frontend_url not in CORS_ALLOWED_ORIGINS:
-    CORS_ALLOWED_ORIGINS.append(frontend_url)
+if frontend_url:
+    # Remove trailing slash if present
+    frontend_url = frontend_url.rstrip('/')
+    if frontend_url not in CORS_ALLOWED_ORIGINS:
+        CORS_ALLOWED_ORIGINS.append(frontend_url)
 
 # For Railway preview deployments, allow all origins
-CORS_ALLOW_ALL_ORIGINS = os.environ.get('RAILWAY_ENVIRONMENT') == 'true' or DEBUG
+# In production, only allow specific origins for security
+CORS_ALLOW_ALL_ORIGINS = os.environ.get('CORS_ALLOW_ALL_ORIGINS', 'False') == 'True' or DEBUG
 CORS_ALLOW_CREDENTIALS = True
+
+# Additional CORS headers for preflight requests
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+# Allow all HTTP methods
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+# Expose headers to frontend
+CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']
 
 # CSRF settings - trust the same origins as CORS
 CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS.copy()
