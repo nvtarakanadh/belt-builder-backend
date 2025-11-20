@@ -6,10 +6,19 @@ from pathlib import Path
 import os
 import sys
 
-# Add D drive Python packages to path (for chardet and other packages)
-d_drive_packages = r"D:\python-packages"
-if os.path.exists(d_drive_packages) and d_drive_packages not in sys.path:
-    sys.path.insert(0, d_drive_packages)
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # python-dotenv not installed, skip loading .env file
+    pass
+
+# Add custom Python packages to path if specified (for local development)
+# This is optional and only used if the path exists
+custom_packages_path = os.environ.get('CUSTOM_PYTHON_PACKAGES_PATH')
+if custom_packages_path and os.path.exists(custom_packages_path) and custom_packages_path not in sys.path:
+    sys.path.insert(0, custom_packages_path)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -102,13 +111,14 @@ if not DATABASE_URL:
         DATABASE_URL = f"postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_database}"
 
 if DATABASE_URL:
-    # Railway provides DATABASE_URL in format: postgresql://user:pass@host:port/dbname
+    # Railway/Neon provides DATABASE_URL in format: postgresql://user:pass@host:port/dbname?sslmode=require
     # Parse and configure database from DATABASE_URL
     try:
         db_config = dj_database_url.config(
             default=DATABASE_URL,
             conn_max_age=600,
             conn_health_checks=True,
+            ssl_require=True,  # Require SSL for Neon and other cloud databases
         )
         DATABASES = {
             'default': db_config
@@ -118,9 +128,15 @@ if DATABASE_URL:
             # Force PostgreSQL if DATABASE_URL is provided
             db_config['ENGINE'] = 'django.db.backends.postgresql'
             DATABASES['default'] = db_config
-        print(f"✅ Database configured from DATABASE_URL: {db_config.get('HOST', 'unknown')}/{db_config.get('NAME', 'unknown')}")
+        
+        # Add SSL configuration for Neon and other cloud databases
+        if 'OPTIONS' not in DATABASES['default']:
+            DATABASES['default']['OPTIONS'] = {}
+        DATABASES['default']['OPTIONS']['sslmode'] = 'require'
+        
+        print(f"[OK] Database configured from DATABASE_URL: {db_config.get('HOST', 'unknown')}/{db_config.get('NAME', 'unknown')}")
     except Exception as e:
-        print(f"⚠️ Error parsing DATABASE_URL: {e}")
+        print(f"[WARNING] Error parsing DATABASE_URL: {e}")
         # Fall back to manual configuration
         DATABASE_URL = None
 
@@ -139,7 +155,7 @@ if not DATABASE_URL:
                 },
             }
         }
-        print(f"✅ Database configured from individual environment variables: {os.environ.get('DB_HOST', 'localhost')}")
+        print(f"[OK] Database configured from individual environment variables: {os.environ.get('DB_HOST', 'localhost')}")
     else:
         # Default to SQLite for easier development
         DATABASES = {
@@ -148,7 +164,7 @@ if not DATABASE_URL:
                 'NAME': BASE_DIR / 'db.sqlite3',
             }
         }
-        print("⚠️ Using SQLite database (not recommended for production)")
+        print("[WARNING] Using SQLite database (not recommended for production)")
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -264,8 +280,9 @@ FREECAD_DOCKER_URL = os.environ.get('FREECAD_DOCKER_URL', None)  # e.g., 'http:/
 # Option 2: Use FreeCAD Docker container via subprocess (requires Docker)
 FREECAD_DOCKER_IMAGE = os.environ.get('FREECAD_DOCKER_IMAGE', 'freecad-converter:latest')
 
-# CloudConvert API (kept for reference, but doesn't support STEP)
-CLOUDCONVERT_API_KEY = os.environ.get('CLOUDCONVERT_API_KEY', '')
+# CloudConvert API for STEP conversion
+# Set CLOUDCONVERT_API_KEY environment variable
+CLOUDCONVERT_API_KEY = os.environ.get('CLOUDCONVERT_API_KEY', None)
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

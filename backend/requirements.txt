@@ -12,6 +12,7 @@ drf-spectacular==0.26.5
 numpy>=2.0.0  # Updated for Python 3.13 compatibility
 gunicorn==21.2.0
 dj-database-url==2.1.0
+python-dotenv==1.0.0
 # CAD processing libraries
 # trimesh is the primary library for GLB/GLTF processing
 trimesh>=4.0.0  # Updated for NumPy 2.0 compatibility

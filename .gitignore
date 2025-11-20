@@ -36,9 +36,40 @@ db.sqlite3-journal
 
 # Environment
 .env
+.env.local
+.env.*.local
 .venv
 env/
 venv/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+db.sqlite3
+
+# Media files (user uploads)
+/media
+/staticfiles
+/static
+
+# Node modules
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
 # IDE
 .vscode/
