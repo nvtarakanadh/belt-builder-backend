@@ -236,9 +236,27 @@ class ComponentViewSet(viewsets.ModelViewSet):
                             component.save()
                             
                         except Exception as e:
+                            error_message = str(e)
+                            # Provide more helpful error messages for STEP conversion failures
+                            if 'STEP' in error_message or 'step' in error_message.lower() or 'conversion' in error_message.lower():
+                                error_message = (
+                                    f"STEP file conversion failed: {error_message}\n\n"
+                                    "SOLUTIONS:\n"
+                                    "1. Pre-convert STEP to STL/OBJ:\n"
+                                    "   - Use FreeCAD (free): https://www.freecad.org/\n"
+                                    "   - Or use online converters\n"
+                                    "   - Then upload the STL or OBJ file instead\n\n"
+                                    "2. Set up FreeCAD Docker service:\n"
+                                    "   - Build the FreeCAD Docker container\n"
+                                    "   - Set FREECAD_DOCKER_URL environment variable\n"
+                                    "   - See backend/README.md for details\n\n"
+                                    "3. For development, use Python 3.10-3.12:\n"
+                                    "   - Install pythonocc-core: pip install pythonocc-core"
+                                )
                             component.processing_status = 'failed'
-                            component.processing_error = str(e)
+                            component.processing_error = error_message
                             component.save()
+                            logger.error(f"Component processing failed: {error_message}", exc_info=True)
                             raise
                         
                         finally:

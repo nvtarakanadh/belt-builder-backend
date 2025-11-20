@@ -29,10 +29,82 @@ except ImportError:
     PYGLTF_AVAILABLE = False
     logger.warning("pygltflib not available. GLB export may be limited.")
 
-# CloudConvert API for STEP conversion (NOT SUPPORTED - CloudConvert doesn't support STEP)
-# This is kept for reference but STEP conversion is not available
+# Check for pythonocc-core for STEP conversion
+try:
+    from OCC.Core.IFSelect import IFSelect_RetDone
+    from OCC.Core.STEPControl_Reader import STEPControl_Reader
+    from OCC.Core.BRepMesh import BRepMesh_IncrementalMesh
+    from OCC.Core.StlAPI import StlAPI_Writer
+    PYTHONOCC_AVAILABLE = True
+except ImportError:
+    PYTHONOCC_AVAILABLE = False
+    logger.warning("pythonocc-core not available. STEP conversion via pythonocc-core will not work.")
+
+# CloudConvert API for STEP conversion
 CLOUDCONVERT_API_KEY = getattr(settings, 'CLOUDCONVERT_API_KEY', None)
 CLOUDCONVERT_API_URL = 'https://api.cloudconvert.com/v2'
+
+
+def convert_step_via_freecad_local(step_file_path, output_format='stl'):
+    """
+    Convert STEP file to STL/OBJ using FreeCAD installed locally (not Docker).
+    
+    Args:
+        step_file_path: Path to STEP file
+        output_format: 'stl' or 'obj'
+    
+    Returns:
+        Path to converted file (temporary location)
+    """
+    import subprocess
+    
+    step_file_path = Path(step_file_path)
+    if not step_file_path.exists():
+        raise FileNotFoundError(f"STEP file not found: {step_file_path}")
+    
+    try:
+        # Create temporary output file
+        temp_dir = Path(tempfile.gettempdir()) / 'step_converter'
+        temp_dir.mkdir(exist_ok=True)
+        output_path = temp_dir / f"{step_file_path.stem}_converted.{output_format}"
+        
+        # Try to use the freecad_converter.py script directly
+        # First, find the script path
+        script_path = Path(__file__).parent.parent / 'freecad_converter.py'
+        if not script_path.exists():
+            # Try alternative location
+            script_path = Path(__file__).parent.parent.parent / 'freecad_converter.py'
+        
+        if not script_path.exists():
+            raise ValueError("freecad_converter.py script not found")
+        
+        # Run the converter script
+        python_cmd = ['python', str(script_path), str(step_file_path), str(output_path), '--format', output_format]
+        
+        result = subprocess.run(
+            python_cmd,
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minutes timeout
+        )
+        
+        if result.returncode != 0:
+            error_detail = result.stderr or result.stdout or "Unknown error"
+            raise ValueError(f"FreeCAD local conversion failed: {error_detail}")
+        
+        if not output_path.exists() or output_path.stat().st_size == 0:
+            raise ValueError(f"Converted file not found or is empty: {output_path}")
+        
+        logger.info(f"Successfully converted STEP to {output_format.upper()} using local FreeCAD: {output_path}")
+        return output_path
+        
+    except FileNotFoundError:
+        raise ValueError("FreeCAD Python modules not found. FreeCAD must be installed on the system.")
+    except subprocess.TimeoutExpired:
+        raise ValueError("STEP conversion timed out (exceeded 5 minutes)")
+    except Exception as e:
+        logger.error(f"Error converting STEP via local FreeCAD: {e}")
+        raise ValueError(f"STEP conversion via local FreeCAD failed: {str(e)}")
 
 
 def convert_step_via_freecad_docker(step_file_path, output_format='stl'):
@@ -94,14 +166,23 @@ def convert_step_via_freecad_docker(step_file_path, output_format='stl'):
     try:
         # Check if docker command is available
         subprocess.run(['docker', '--version'], capture_output=True, check=True, timeout=5)
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
+        error_detail = "Docker is not installed or not accessible" if isinstance(e, FileNotFoundError) else "Docker check failed"
         raise ValueError(
-            "STEP file conversion requires FreeCAD Docker container.\n\n"
-            "Setup options:\n"
-            "1. Deploy FreeCAD Docker service (see Dockerfile.freecad)\n"
-            "2. Set FREECAD_DOCKER_URL environment variable to point to the service\n"
-            "3. Or pre-convert STEP files to STL/OBJ before uploading\n\n"
-            "For now, please convert your STEP file to STL or OBJ format before uploading."
+            f"STEP file conversion requires FreeCAD Docker container, but {error_detail}.\n\n"
+            "SOLUTIONS:\n"
+            "1. Install Docker Desktop (https://www.docker.com/products/docker-desktop/)\n"
+            "   Then build and run the FreeCAD Docker container\n\n"
+            "2. Set up FreeCAD Docker service:\n"
+            "   - Build: docker build -f Dockerfile.freecad -t freecad-converter:latest .\n"
+            "   - Run: docker run -d -p 8001:8001 --name freecad-service freecad-converter:latest\n"
+            "   - Set FREECAD_DOCKER_URL=http://localhost:8001\n\n"
+            "3. Pre-convert STEP files to STL/OBJ before uploading:\n"
+            "   - Use FreeCAD (free): https://www.freecad.org/\n"
+            "   - Or use online converters\n"
+            "   - Then upload the STL or OBJ file instead\n\n"
+            "4. For development, use Python 3.10-3.12 and install pythonocc-core:\n"
+            "   pip install pythonocc-core"
         )
     
     # Use Docker to run FreeCAD conversion
@@ -134,10 +215,21 @@ def convert_step_via_freecad_docker(step_file_path, output_format='stl'):
         )
         
         if result.returncode != 0:
-            raise ValueError(f"FreeCAD Docker conversion failed: {result.stderr}")
+            error_detail = result.stderr or result.stdout or "Unknown error"
+            raise ValueError(
+                f"FreeCAD Docker conversion failed.\n"
+                f"Error: {error_detail}\n\n"
+                f"Make sure:\n"
+                f"1. The FreeCAD Docker image '{freecad_docker_image}' exists\n"
+                f"2. Build it with: docker build -f Dockerfile.freecad -t {freecad_docker_image} .\n"
+                f"3. Or use a pre-converted STL/OBJ file instead"
+            )
         
         if not output_path.exists():
-            raise ValueError(f"Converted file not found: {output_path}")
+            raise ValueError(
+                f"Converted file not found: {output_path}\n"
+                f"The Docker container may have failed silently. Check Docker logs."
+            )
         
         logger.info(f"Successfully converted STEP to {output_format.upper()}: {output_path}")
         return output_path
@@ -159,22 +251,278 @@ def convert_step_via_cloudconvert(step_file_path, output_format='stl'):
     """
     Convert STEP file to STL/OBJ using CloudConvert API.
     
-    NOTE: CloudConvert does NOT support STEP format conversion.
-    This function is kept for reference but will not work.
+    Args:
+        step_file_path: Path to STEP file
+        output_format: 'stl' or 'obj'
+    
+    Returns:
+        Path to converted file (temporary location)
     """
-    # CloudConvert does not support STEP format
-    raise ValueError(
-        "CloudConvert does not support STEP format conversion.\n"
-        "Please use FreeCAD Docker service or pre-convert STEP files."
-    )
+    if not CLOUDCONVERT_API_KEY:
+        raise ValueError("CloudConvert API key not configured. Set CLOUDCONVERT_API_KEY environment variable.")
+    
+    step_file_path = Path(step_file_path)
+    if not step_file_path.exists():
+        raise FileNotFoundError(f"STEP file not found: {step_file_path}")
+    
+    try:
+        # Create temporary output file
+        temp_dir = Path(tempfile.gettempdir()) / 'step_converter'
+        temp_dir.mkdir(exist_ok=True)
+        output_path = temp_dir / f"{step_file_path.stem}_converted.{output_format}"
+        
+        logger.info(f"Converting STEP to {output_format.upper()} via CloudConvert...")
+        
+        # Map output format
+        output_format_map = {'stl': 'stl', 'obj': 'obj'}
+        target_format = output_format_map.get(output_format, 'stl')
+        
+        headers = {
+            'Authorization': f'Bearer {CLOUDCONVERT_API_KEY}',
+            'Content-Type': 'application/json'
+        }
+        
+        # Step 1: Create a job with tasks (import, convert, export)
+        job_url = f"{CLOUDCONVERT_API_URL}/jobs"
+        job_payload = {
+            'tasks': {
+                'import-step': {
+                    'operation': 'import/upload'
+                },
+                'convert-step': {
+                    'operation': 'convert',
+                    'input': 'import-step',
+                    'input_format': 'step',
+                    'output_format': target_format
+                },
+                'export-result': {
+                    'operation': 'export/url',
+                    'input': 'convert-step'
+                }
+            }
+        }
+        
+        job_response = requests.post(job_url, headers=headers, json=job_payload, timeout=30)
+        
+        if not job_response.ok:
+            error_text = job_response.text
+            logger.error(f"CloudConvert job creation failed: {job_response.status_code} - {error_text}")
+            raise ValueError(f"CloudConvert API error: {job_response.status_code} - {error_text}")
+        
+        job_response.raise_for_status()
+        job_data = job_response.json()
+        
+        logger.debug(f"CloudConvert job response: {job_data}")
+        
+        # Extract job ID - try different response structures
+        job_id = None
+        if 'data' in job_data:
+            job_id = job_data['data'].get('id')
+        elif 'id' in job_data:
+            job_id = job_data['id']
+        
+        if not job_id:
+            raise ValueError(f"Failed to create CloudConvert job. Response: {job_response.text}")
+        
+        logger.info(f"CloudConvert job created, job ID: {job_id}")
+        
+        # Step 2: Upload the file for the import task
+        # Find the import task in the response
+        tasks_data = job_data.get('data', {}).get('tasks') if 'data' in job_data else job_data.get('tasks')
+        import_task = None
+        
+        # Try list structure
+        if isinstance(tasks_data, list):
+            for task in tasks_data:
+                if task.get('operation') == 'import/upload' or task.get('name') == 'import-step':
+                    import_task = task
+                    break
+        # Try dict structure
+        elif isinstance(tasks_data, dict):
+            import_task = tasks_data.get('import-step')
+        
+        if not import_task:
+            raise ValueError(f"Failed to find import task in CloudConvert job response. Tasks: {tasks_data}")
+        
+        # Get upload URL and form fields
+        task_result = import_task.get('result', {})
+        if not task_result:
+            raise ValueError(f"Import task has no result. Task: {import_task}")
+        
+        # Try different structures for upload URL
+        upload_url = None
+        upload_fields = {}
+        
+        if 'form' in task_result:
+            upload_url = task_result['form'].get('url')
+            upload_fields = task_result['form'].get('parameters', {})
+        elif 'url' in task_result:
+            upload_url = task_result['url']
+        
+        if not upload_url:
+            raise ValueError(f"Failed to get upload URL from CloudConvert job. Task result: {task_result}")
+        
+        # Upload file using the form URL and fields
+        with open(step_file_path, 'rb') as f:
+            files = {'file': (step_file_path.name, f, 'application/octet-stream')}
+            # If upload_fields is empty, don't send it
+            upload_data = upload_fields if upload_fields else None
+            upload_response = requests.post(upload_url, data=upload_data, files=files, timeout=300)
+            upload_response.raise_for_status()
+        
+        logger.info(f"File uploaded to CloudConvert")
+        
+        # Step 3: Wait for job to complete
+        max_wait = 300  # 5 minutes
+        start_time = time.time()
+        download_url = None
+        
+        while time.time() - start_time < max_wait:
+            status_url = f"{CLOUDCONVERT_API_URL}/jobs/{job_id}"
+            status_response = requests.get(status_url, headers=headers, timeout=30)
+            
+            if not status_response.ok:
+                error_text = status_response.text
+                logger.error(f"CloudConvert job status check failed: {status_response.status_code} - {error_text}")
+                raise ValueError(f"CloudConvert API error: {status_response.status_code} - {error_text}")
+            
+            status_response.raise_for_status()
+            status_data = status_response.json()
+            
+            # Extract job status - try different response structures
+            job_data = status_data.get('data', {}) if 'data' in status_data else status_data
+            job_status = job_data.get('status')
+            
+            if job_status == 'finished':
+                # Find the export task result
+                tasks = job_data.get('tasks', [])
+                
+                # Try list structure
+                if isinstance(tasks, list):
+                    for task in tasks:
+                        if task.get('operation') == 'export/url' or task.get('name') == 'export-result':
+                            result = task.get('result', {})
+                            files = result.get('files', [])
+                            if files and len(files) > 0:
+                                download_url = files[0].get('url')
+                            break
+                # Try dict structure
+                elif isinstance(tasks, dict):
+                    export_task = tasks.get('export-result')
+                    if export_task:
+                        result = export_task.get('result', {})
+                        files = result.get('files', [])
+                        if files and len(files) > 0:
+                            download_url = files[0].get('url')
+                
+                if download_url:
+                    break
+            elif job_status == 'error':
+                error_msg = job_data.get('message', 'Unknown error')
+                raise ValueError(f"CloudConvert conversion failed: {error_msg}")
+            elif job_status in ['waiting', 'processing']:
+                # Still processing, wait and check again
+                time.sleep(2)
+            else:
+                raise ValueError(f"Unexpected job status: {job_status}")
+        
+        if not download_url:
+            raise ValueError("CloudConvert conversion timed out or failed to get download URL")
+        
+        # Step 4: Download the converted file
+        download_response = requests.get(download_url, timeout=300)
+        download_response.raise_for_status()
+        
+        with open(output_path, 'wb') as f:
+            f.write(download_response.content)
+        
+        if not output_path.exists() or output_path.stat().st_size == 0:
+            raise ValueError(f"Downloaded file is empty or not found: {output_path}")
+        
+        logger.info(f"Successfully converted STEP to {output_format.upper()} via CloudConvert: {output_path}")
+        return output_path
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"CloudConvert API error: {e}")
+        raise ValueError(f"CloudConvert API error: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error converting STEP via CloudConvert: {e}", exc_info=True)
+        raise ValueError(f"STEP conversion via CloudConvert failed: {str(e)}")
+
+
+def convert_step_via_pythonocc(step_file_path, output_format='stl'):
+    """
+    Convert STEP file to STL using pythonocc-core (OpenCASCADE).
+    
+    Args:
+        step_file_path: Path to STEP file
+        output_format: 'stl' (pythonocc only supports STL export)
+    
+    Returns:
+        Path to converted file (temporary location)
+    """
+    if not PYTHONOCC_AVAILABLE:
+        raise ValueError("pythonocc-core is not available")
+    
+    if output_format != 'stl':
+        raise ValueError(f"pythonocc-core only supports STL output, got: {output_format}")
+    
+    step_file_path = Path(step_file_path)
+    if not step_file_path.exists():
+        raise FileNotFoundError(f"STEP file not found: {step_file_path}")
+    
+    try:
+        # Create temporary output file
+        temp_dir = Path(tempfile.gettempdir()) / 'step_converter'
+        temp_dir.mkdir(exist_ok=True)
+        output_path = temp_dir / f"{step_file_path.stem}_converted.stl"
+        
+        # Read STEP file
+        reader = STEPControl_Reader()
+        status = reader.ReadFile(str(step_file_path))
+        
+        if status != IFSelect_RetDone:
+            raise ValueError(f"Failed to read STEP file: {step_file_path}")
+        
+        # Transfer all roots
+        reader.TransferRoots()
+        nb_shapes = reader.NbShapes()
+        
+        if nb_shapes == 0:
+            raise ValueError("No shapes found in STEP file")
+        
+        # Get the first shape (or combine all shapes)
+        shape = reader.OneShape()
+        
+        # Mesh the shape with lower precision for simpler meshes
+        # Lower linear deflection = coarser mesh (1.0 for even simpler meshes)
+        # This reduces polygon count significantly for better web performance
+        # Higher value = fewer polygons = better performance
+        mesh = BRepMesh_IncrementalMesh(shape, 1.0, False, 1.0, True)
+        mesh.Perform()
+        
+        # Write to STL
+        writer = StlAPI_Writer()
+        writer.SetASCIIMode(False)  # Binary STL
+        success = writer.Write(shape, str(output_path))
+        
+        if not success:
+            raise ValueError(f"Failed to write STL file: {output_path}")
+        
+        if not output_path.exists() or output_path.stat().st_size == 0:
+            raise ValueError(f"STL file was not created or is empty: {output_path}")
+        
+        logger.info(f"Successfully converted STEP to STL using pythonocc-core: {output_path}")
+        return output_path
+        
+    except Exception as e:
+        logger.error(f"pythonocc-core conversion failed: {e}", exc_info=True)
+        raise ValueError(f"STEP conversion via pythonocc-core failed: {str(e)}")
 
 
 def convert_step_file(step_file_path, output_format='stl'):
     """
-    Convert STEP file to STL/OBJ using FreeCAD Docker (deployment-friendly).
-    
-    This function attempts to use FreeCAD in a Docker container for conversion.
-    The Docker container can be deployed alongside the main application.
+    Convert STEP file to STL/OBJ using CloudConvert API.
     
     Args:
         step_file_path: Path to STEP file
@@ -183,22 +531,15 @@ def convert_step_file(step_file_path, output_format='stl'):
     Returns:
         Path to converted file (temporary location)
     """
-    # Try FreeCAD Docker first (deployment-friendly)
-    try:
-        return convert_step_via_freecad_docker(step_file_path, output_format)
-    except Exception as e:
-        logger.error(f"FreeCAD Docker conversion failed: {e}")
-        # If Docker is not available, provide helpful error message
+    # Only use CloudConvert if API key is configured
+    if not CLOUDCONVERT_API_KEY:
         raise ValueError(
-            f"STEP file conversion is not available.\n\n"
-            f"Error: {str(e)}\n\n"
-            f"SOLUTION: Please pre-convert your STEP file to STL or OBJ format before uploading.\n\n"
-            f"You can use:\n"
-            f"1. FreeCAD (free): https://www.freecad.org/\n"
-            f"2. Online converters (search for 'STEP to STL converter')\n"
-            f"3. Other CAD software\n\n"
-            f"After conversion, upload the STL or OBJ file instead of the STEP file."
+            "CloudConvert API key not configured. Set CLOUDCONVERT_API_KEY environment variable.\n"
+            "Get your API key from: https://cloudconvert.com/"
         )
+    
+    logger.info("Converting STEP file via CloudConvert...")
+    return convert_step_via_cloudconvert(step_file_path, output_format)
 
 
 class CADProcessor:
@@ -287,6 +628,19 @@ class CADProcessor:
             # Handle single mesh
             if not isinstance(self.mesh, trimesh.Trimesh):
                 raise ValueError(f"Could not extract mesh from file. Got type: {type(self.mesh)}")
+            
+            # Simplify mesh early for better performance
+            # Target: 500 faces for maximum smoothness
+            target_faces = 500
+            if len(self.mesh.faces) > target_faces:
+                try:
+                    logger.info(f"Simplifying mesh during processing: {len(self.mesh.faces)} -> {target_faces} faces")
+                    simplified = self.mesh.simplify_quadric_decimation(face_count=target_faces)
+                    if simplified is not None and len(simplified.faces) > 0:
+                        self.mesh = simplified
+                        logger.info(f"Mesh simplified to {len(self.mesh.faces)} faces")
+                except Exception as e:
+                    logger.warning(f"Early simplification failed: {e}, continuing with original")
             
             if not hasattr(self.mesh, 'bounds'):
                 raise ValueError("Could not extract mesh bounds")
@@ -399,7 +753,7 @@ class CADProcessor:
         return self._convert_mesh_to_glb(output_path)
     
     def _convert_mesh_to_glb(self, output_path):
-        """Convert loaded mesh to GLB format"""
+        """Convert loaded mesh to GLB format with simplification for web performance"""
         if not TRIMESH_AVAILABLE:
             raise ValueError("trimesh is required for GLB conversion")
         
@@ -422,12 +776,35 @@ class CADProcessor:
         if not isinstance(self.mesh, trimesh.Trimesh):
             raise ValueError(f"Cannot convert to GLB. Got type: {type(self.mesh)}")
         
+        # Simplify mesh for web performance
+        # Target face count: 500 faces for maximum smoothness
+        # This provides acceptable visual quality while ensuring very smooth rendering
+        target_face_count = 500
+        original_face_count = len(self.mesh.faces)
+        
+        if original_face_count > target_face_count:
+            try:
+                logger.info(f"Simplifying mesh: {original_face_count} faces -> target: {target_face_count} faces")
+                
+                # Use quadric decimation for high-quality simplification
+                # Simplify the mesh
+                simplified = self.mesh.simplify_quadric_decimation(face_count=target_face_count)
+                
+                if simplified is not None and len(simplified.faces) > 0:
+                    self.mesh = simplified
+                    logger.info(f"Mesh simplified: {original_face_count} -> {len(self.mesh.faces)} faces ({len(self.mesh.faces)/original_face_count*100:.1f}% of original)")
+                else:
+                    logger.warning(f"Simplification failed, using original mesh with {original_face_count} faces")
+            except Exception as e:
+                logger.warning(f"Mesh simplification failed: {e}, using original mesh")
+                # Continue with original mesh if simplification fails
+        
         # Export to GLB
         try:
             extension = self.file_path.suffix.lower()
             # Trimesh can export to GLB directly
             self.mesh.export(str(output_path), file_type='glb')
-            logger.info(f"Converted {extension} file to GLB: {output_path}")
+            logger.info(f"Converted {extension} file to GLB: {output_path} ({len(self.mesh.faces)} faces)")
             return output_path
         except Exception as e:
             logger.error(f"Failed to export to GLB: {e}")

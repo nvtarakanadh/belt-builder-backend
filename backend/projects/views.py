@@ -302,7 +302,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
         """
         Save/update assembly state.
         POST /api/projects/{id}/save/
-        Only updates existing items - does not create new ones.
+        Updates existing items and deletes items that are no longer in the scene.
+        Does not create new items - use add_component for that.
         """
         import logging
         logger = logging.getLogger(__name__)
@@ -312,23 +313,56 @@ class ProjectViewSet(viewsets.ModelViewSet):
         # Update assembly items if provided
         items_data = request.data.get('assembly_items', [])
         
-        if not items_data:
-            return Response({'status': 'saved', 'updated': 0, 'skipped': 0}, status=status.HTTP_200_OK)
-        
         updated_count = 0
         skipped_count = 0
+        deleted_count = 0
         errors = []
         
         try:
             with transaction.atomic():
-                # Get all existing item IDs for this project to validate
-                existing_item_ids = set(
-                    AssemblyItem.objects.filter(project=project).values_list('id', flat=True)
-                )
+                # Get all existing item IDs for this project
+                existing_items = AssemblyItem.objects.filter(project=project)
+                existing_item_ids = set(existing_items.values_list('id', flat=True))
+                
+                # Get IDs from the save request
+                requested_item_ids = set()
+                for item_data in items_data:
+                    item_id = item_data.get('id')
+                    if item_id:
+                        requested_item_ids.add(item_id)
+                
+                # Find items to delete (exist in backend but not in save request)
+                items_to_delete = existing_item_ids - requested_item_ids
+                
+                # Safety check: Only delete if we're not deleting ALL items
+                # This prevents accidental deletion of everything if save is called with empty/invalid data
+                if items_to_delete:
+                    # If we're trying to delete all items, require explicit confirmation
+                    if len(items_to_delete) == len(existing_item_ids) and len(existing_item_ids) > 0:
+                        # Check if this is an intentional "clear all" operation
+                        # Only allow if items_data is explicitly empty (not just missing IDs)
+                        if len(items_data) == 0:
+                            # Explicit empty array - user wants to clear all
+                            deleted_items = existing_items.filter(id__in=items_to_delete)
+                            deleted_count = deleted_items.count()
+                            deleted_items.delete()
+                            logger.info(f"Cleared all {deleted_count} items from the scene (explicit empty save)")
+                        else:
+                            # This looks like an error - we have items_data but all IDs are invalid
+                            # Don't delete anything, just log a warning
+                            logger.warning(f"Attempted to delete all {len(existing_item_ids)} items, but save request contains {len(items_data)} items with invalid IDs. Aborting deletion for safety.")
+                            skipped_count += len(items_data)
+                    else:
+                        # Partial deletion - safe to proceed
+                        deleted_items = existing_items.filter(id__in=items_to_delete)
+                        deleted_count = deleted_items.count()
+                        deleted_items.delete()
+                        logger.info(f"Deleted {deleted_count} items that are no longer in the scene: {items_to_delete}")
                 
                 # Track which items we're updating to detect duplicates
                 processed_ids = set()
                 
+                # Update existing items
                 for item_data in items_data:
                     item_id = item_data.get('id')
                     
@@ -375,12 +409,13 @@ class ProjectViewSet(viewsets.ModelViewSet):
             response_data = {
                 'status': 'saved',
                 'updated': updated_count,
+                'deleted': deleted_count,
                 'skipped': skipped_count,
             }
             if errors:
                 response_data['errors'] = errors
             
-            logger.info(f"Save completed: {updated_count} updated, {skipped_count} skipped")
+            logger.info(f"Save completed: {updated_count} updated, {deleted_count} deleted, {skipped_count} skipped")
             return Response(response_data, status=status.HTTP_200_OK)
             
         except Exception as e:
