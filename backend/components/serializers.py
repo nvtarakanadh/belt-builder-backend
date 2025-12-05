@@ -42,7 +42,12 @@ class ComponentSerializer(serializers.ModelSerializer):
             'mountable_sides', 'supported_orientations', 'compatible_types',
             'processing_status', 'processing_error', 'created_at', 'updated_at'
         ]
-        read_only_fields = fields
+        read_only_fields = [
+            'id', 'glb_url', 'original_url', 'bounding_box', 'center', 'volume',
+            'mountable_sides', 'supported_orientations', 'compatible_types',
+            'processing_status', 'processing_error', 'created_at', 'updated_at'
+        ]
+        # Allow name and category_label to be updated, but original_file is handled in the view
     
     def get_glb_url(self, obj):
         if obj.glb_file:

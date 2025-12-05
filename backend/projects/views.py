@@ -79,7 +79,16 @@ class ProjectViewSet(viewsets.ModelViewSet):
         logger = logging.getLogger(__name__)
         
         try:
-            project = self.get_object()
+            # Check if project exists and user has access
+            try:
+                project = self.get_object()
+            except Exception as e:
+                logger.error(f"Project not found or access denied: {e}")
+                return Response(
+                    {"error": f"Project with ID {pk} not found or you don't have access to it. Please refresh the page or create a new project."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
             logger.info(f"Adding component to project {project.id}")
             
             serializer = AssemblyItemCreateSerializer(data=request.data, context={'project': project})

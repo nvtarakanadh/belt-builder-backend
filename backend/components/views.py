@@ -40,6 +40,157 @@ class ComponentViewSet(viewsets.ModelViewSet):
     serializer_class = ComponentSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     
+    def update(self, request, *args, **kwargs):
+        """
+        Update component, including handling original_file and glb_file updates.
+        When original_file is updated, regenerate GLB file and geometry data.
+        When glb_file is updated directly, use it without processing.
+        """
+        instance = self.get_object()
+        partial = kwargs.pop('partial', False)
+        
+        # Check if files are being updated
+        uploaded_original_file = request.FILES.get('original_file')
+        uploaded_glb_file = request.FILES.get('glb_file')
+        original_file_updated = uploaded_original_file is not None
+        glb_file_updated = uploaded_glb_file is not None
+        
+        # Handle GLB file upload (optional, direct upload)
+        if glb_file_updated and not original_file_updated:
+            # Direct GLB file upload - just save it without processing
+            file_ext = Path(uploaded_glb_file.name).suffix.lower()
+            if file_ext not in ['.glb', '.gltf']:
+                return Response(
+                    {'error': 'GLB file must be a .glb or .gltf file'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if uploaded_glb_file.size > settings.CAD_UPLOAD_MAX_SIZE:
+                return Response(
+                    {'error': f'File too large. Maximum size: {settings.CAD_UPLOAD_MAX_SIZE / (1024*1024)} MB'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Update name and category_label if provided
+            if 'name' in request.data:
+                instance.name = request.data['name']
+            if 'category_label' in request.data:
+                instance.category_label = request.data['category_label']
+            
+            # Save the GLB file directly
+            instance.glb_file = uploaded_glb_file
+            instance.save(update_fields=['name', 'category_label', 'glb_file'])
+            
+            # Return updated component
+            response_serializer = ComponentSerializer(instance, context={'request': request})
+            return Response(response_serializer.data, status=status.HTTP_200_OK)
+        
+        # Handle original file upload (processes and generates GLB)
+        if original_file_updated:
+            # Validate file extension
+            file_ext = Path(uploaded_original_file.name).suffix.lower()
+            if file_ext not in settings.CAD_ALLOWED_EXTENSIONS:
+                return Response(
+                    {'error': f'Invalid file type. Allowed: {", ".join(settings.CAD_ALLOWED_EXTENSIONS)}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validate file size
+            if uploaded_file.size > settings.CAD_UPLOAD_MAX_SIZE:
+                return Response(
+                    {'error': f'File too large. Maximum size: {settings.CAD_UPLOAD_MAX_SIZE / (1024*1024)} MB'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Process the file update synchronously
+            post_save.disconnect(handle_component_post_save, sender=Component)
+            try:
+                with transaction.atomic():
+                    # Update name and category_label if provided
+                    if 'name' in request.data:
+                        instance.name = request.data['name']
+                    if 'category_label' in request.data:
+                        instance.category_label = request.data['category_label']
+                    
+                    # Save the original_file and other fields
+                    instance.original_file = uploaded_original_file
+                    instance.processing_status = 'processing'
+                    instance.processing_error = None
+                    instance.save(update_fields=['name', 'category_label', 'original_file', 'processing_status', 'processing_error'])
+                    
+                    # Process the new file
+                    temp_file_path = Path(settings.MEDIA_ROOT) / 'temp' / f'{instance.id}_{uploaded_original_file.name}'
+                    temp_file_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    with open(temp_file_path, 'wb+') as temp_file:
+                        for chunk in uploaded_original_file.chunks():
+                            temp_file.write(chunk)
+                    
+                    try:
+                        # Process CAD file and regenerate GLB
+                        glb_output_path = Path(settings.MEDIA_ROOT) / 'components' / 'glb' / f'{instance.id}.glb'
+                        glb_output_path.parent.mkdir(parents=True, exist_ok=True)
+                        
+                        process_result = process_cad_file(
+                            temp_file_path,
+                            extract_geometry=True,
+                            copy_glb_to=str(glb_output_path)
+                        )
+                        
+                        geometry_data = process_result.get('geometry_data', {})
+                        bbox = geometry_data.get('bounding_box', {})
+                        center = geometry_data.get('center', {})
+                        instance.bounding_box = bbox
+                        instance.center = {'x': center[0], 'y': center[1], 'z': center[2]} if isinstance(center, list) else center
+                        instance.volume = geometry_data.get('volume', 0.0)
+                        
+                        # Update GLB file
+                        glb_file_path = None
+                        if process_result.get('glb_path') and Path(process_result['glb_path']).exists():
+                            glb_file_path = Path(process_result['glb_path'])
+                        elif temp_file_path.exists() and temp_file_path.suffix.lower() in ['.glb', '.gltf']:
+                            # Fallback: Original file is already GLB/GLTF, use it
+                            glb_file_path = temp_file_path
+                        
+                        if glb_file_path and glb_file_path.exists():
+                            with open(glb_file_path, 'rb') as glb_file:
+                                instance.glb_file.save(
+                                    f'{instance.id}.glb',
+                                    glb_file,
+                                    save=False
+                                )
+                            logger.info(f"GLB file updated for component {instance.id}: {instance.glb_file.name}")
+                        else:
+                            logger.warning(f"GLB file not found for component {instance.id}. Conversion may have failed.")
+                        
+                        instance.processing_status = 'completed'
+                        instance.save()
+                        
+                    except Exception as e:
+                        error_message = str(e)
+                        instance.processing_status = 'failed'
+                        instance.processing_error = error_message
+                        instance.save()
+                        logger.error(f"Component update processing failed: {error_message}", exc_info=True)
+                        return Response(
+                            {'error': f'Error processing file: {error_message}'},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                        )
+                    finally:
+                        # Clean up temp file
+                        if temp_file_path.exists():
+                            os.remove(temp_file_path)
+            finally:
+                # Re-enable signal
+                post_save.connect(handle_component_post_save, sender=Component)
+            
+            # Return updated component
+            response_serializer = ComponentSerializer(instance, context={'request': request})
+            return Response(response_serializer.data, status=status.HTTP_200_OK)
+        else:
+            # Standard update without file change
+            return super().update(request, *args, **kwargs)
+    
     def get_queryset(self):
         queryset = super().get_queryset()
         

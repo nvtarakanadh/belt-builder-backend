@@ -21,7 +21,7 @@ class ComponentAdmin(admin.ModelAdmin):
     search_fields = ['name']
     readonly_fields = [
         'processing_status', 'processing_error', 'created_at', 'updated_at',
-        'bounding_box', 'center', 'volume', 'mountable_sides', 'supported_orientations', 'compatible_types', 'glb_file'
+        'bounding_box', 'center', 'volume', 'mountable_sides', 'supported_orientations', 'compatible_types'
     ]
     
     fields = (
